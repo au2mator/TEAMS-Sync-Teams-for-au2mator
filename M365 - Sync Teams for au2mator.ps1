@@ -5,11 +5,11 @@
 [string]$LogfileName = "Sync Teams for au2mator"
 
 
-$TeamsAdminUser = "TeamsAdmin@tenant.onmicrosoft.com"
-$TeamsAdminPW = "YourPassword"
+$Modules = @("SQLserver") #$Modules = @("ActiveDirectory", "SharePointPnPPowerShellOnline")
 
-$StagingDatabase="au2matorHelp"
-$StagingServer="Demo01"
+
+$StagingDatabase = "au2matorHelp"
+$StagingServer = "Demo01"
 
 
 Function Write-au2matorLog {
@@ -40,67 +40,61 @@ Function Write-au2matorLog {
 }
 
 
-Function Sync-Table_TeamsList ($Object)
-{
+Function Sync-Table_TeamsList ($Object) {
     $Object | add-member -NotePropertyName Status -NotePropertyValue "1"
     # Check if Table exists
-    $TableName="Teams-TeamsList"
+    $TableName = "Teams-TeamsList"
 
-    if ((Read-SqlTableData  -ServerInstance $StagingServer -DatabaseName $StagingDatabase -SchemaName 'dbo' -TableName $TableName -ErrorAction SilentlyContinue).count -eq 0)
-    {
-        $Object | select-Object -Property GroupID, Displayname, Visibility, Archived, MailNickName, Description, Status    | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName "Teams-TeamsList" -SchemaName "dbo" -Force
+    if ((Read-SqlTableData  -ServerInstance $StagingServer -DatabaseName $StagingDatabase -SchemaName 'dbo' -TableName $TableName -ErrorAction SilentlyContinue).count -eq 0) {
+        $Object | select-Object -Property ID, Displayname, Visibility, MailNickName, Description, Status    | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName "Teams-TeamsList" -SchemaName "dbo" -Force
     }
 
 
 
-    $QueryCheck="Select GroupID from [$TableName] where GroupID = '$($Object.groupid)'"
-    $QueryUpdate="USE [$StagingDatabase]
+    $QueryCheck = "Select ID from [$TableName] where ID = '$($Object.ID)'"
+    $QueryUpdate = "USE [$StagingDatabase]
     GO
 
     UPDATE [dbo].[$TableName]
-    SET [GroupId] = '$($Object.groupid)'
+    SET [ID] = '$($Object.ID)'
         ,[DisplayName] = '$($Object.DisplayName)'
         ,[Visibility] = '$($Object.Visibility)'
-        ,[Archived] = '$($Object.Archived)'
         ,[MailNickName] = '$($Object.MailNickName)'
         ,[Description] = '$($Object.Description)'
         ,[Status] = '$($Object.Status)'
-    WHERE GroupID = '$($Object.groupid)'
+    WHERE ID = '$($Object.ID)'
     GO"
 
     
 
 
-    if (Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryCheck)
-    {
+    if (Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryCheck) {
         # Update
         Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryUpdate
 
     }
     else {
         #Insert
-        $Object | select-Object -Property GroupID, Displayname, Visibility, Archived, MailNickName, Description, Status     | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName "Teams-TeamsList" -SchemaName "dbo"
+        $Object | select-Object -Property ID, Displayname, Visibility, MailNickName, Description, Status     | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName "Teams-TeamsList" -SchemaName "dbo"
     }
 
 }
 
-Function Sync-Table_ChannelList ($Object, $TeamID)
-{
+Function Sync-Table_ChannelList ($Object, $TeamID) {
     $Object | add-member -NotePropertyName TeamID -NotePropertyValue $TeamID 
     $Object | add-member -NotePropertyName Status -NotePropertyValue "1"
     
     # Check if Table exists
-    $TableName="Teams-ChannelList"
+    $TableName = "Teams-ChannelList"
 
-    if ((Read-SqlTableData  -ServerInstance $StagingServer -DatabaseName $StagingDatabase -SchemaName 'dbo' -TableName $TableName -ErrorAction SilentlyContinue).count -eq 0)
-    {
+    if ((Read-SqlTableData  -ServerInstance $StagingServer -DatabaseName $StagingDatabase -SchemaName 'dbo' -TableName $TableName -ErrorAction SilentlyContinue).count -eq 0) {
         
         $Object | select-Object -Property ID, Displayname, Description, TeamID, Status  | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName $TableName -SchemaName "dbo" -Force
     }
 
 
-    $QueryCheck="Select ID from [$TableName] where ID = '$($Object.ID)'"
-    $QueryUpdate="USE [$StagingDatabase]
+    $QueryCheck = "Select ID from [$TableName] where ID = '$($Object.ID)'"
+    $QueryUpdate = "USE [$StagingDatabase]
     GO
 
     UPDATE [dbo].[$TableName]
@@ -112,8 +106,7 @@ Function Sync-Table_ChannelList ($Object, $TeamID)
     WHERE ID = '$($Object.id)'
     GO"
 
-    if (Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryCheck)
-    {
+    if (Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryCheck) {
         # Update
         Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryUpdate
 
@@ -127,36 +120,38 @@ Function Sync-Table_ChannelList ($Object, $TeamID)
 }
 
 
-Function Sync-Table_MemberList ($Object, $TeamID)
-{
+Function Sync-Table_MemberList ($Object, $TeamID) {
     $Object | add-member -NotePropertyName TeamID -NotePropertyValue $TeamID 
     $Object | add-member -NotePropertyName Status -NotePropertyValue "1"
+    if ($Member.roles -eq "Owner")
+    {$Object | add-member -NotePropertyName Role -NotePropertyValue "Owner"}
+    else {
+        $Object | add-member -NotePropertyName Role -NotePropertyValue "Member"
+    }
     # Check if Table exists
-    $TableName="Teams-MemberList"
+    $TableName = "Teams-MemberList"
 
-    if ((Read-SqlTableData  -ServerInstance $StagingServer -DatabaseName $StagingDatabase -SchemaName 'dbo' -TableName $TableName -ErrorAction SilentlyContinue).count -eq 0)
-    {
+    if ((Read-SqlTableData  -ServerInstance $StagingServer -DatabaseName $StagingDatabase -SchemaName 'dbo' -TableName $TableName -ErrorAction SilentlyContinue).count -eq 0) {
         
-        $Object | select-Object -Property UserID, User, Name, Role, TeamID, Status  | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName $TableName -SchemaName "dbo" -Force
+        $Object | select-Object -Property UserID, email, displayName, Role, TeamID, Status  | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName $TableName -SchemaName "dbo" -Force
     }
 
-
-    $QueryCheck="Select UserID from [$TableName] where UserID = '$($Object.UserID)'"
-    $QueryUpdate="USE [$StagingDatabase]
+    
+    $QueryCheck = "Select UserID from [$TableName] where UserID = '$($Object.UserID)'"
+    $QueryUpdate = "USE [$StagingDatabase]
     GO
 
     UPDATE [dbo].[$TableName]
     SET [UserID] = '$($Object.UserID)'
-        ,[User] = '$($Object.User)'
-        ,[Name] = '$($Object.Name)'
+        ,[email] = '$($Object.email)'
+        ,[displayName] = '$($Object.displayName)'
         ,[Role] = '$($Object.Role)'
         ,[TeamID] = '$($TeamID)'
         ,[Status] = '$($Object.Status)'
     WHERE UserID = '$($Object.UserID)'
     GO"
 
-    if (Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryCheck)
-    {
+    if (Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryCheck) {
         # Update
         Invoke-Sqlcmd -ServerInstance $StagingServer -Database $StagingDatabase -Query $QueryUpdate
 
@@ -164,14 +159,13 @@ Function Sync-Table_MemberList ($Object, $TeamID)
     else {
         #Insert
         
-        $Object | select-Object -Property UserID, User, Name, Role, TeamID, Status  | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName $TableName -SchemaName "dbo"
+        $Object | select-Object -Property UserID, email, displayName, Role, TeamID, Status  | Write-SQLTableData -Serverinstance $StagingServer -DatabaseName $StagingDatabase -TableName $TableName -SchemaName "dbo" -Force
     }
 
 }
 
-Function Reset-Deleted ($TableName)
-{
-    $QueryDeleted="USE [$StagingDatabase]
+Function Reset-Deleted ($TableName) {
+    $QueryDeleted = "USE [$StagingDatabase]
     GO
 
     UPDATE [dbo].[$TableName]
@@ -185,40 +179,49 @@ Function Reset-Deleted ($TableName)
 }
 
 
-Write-au2matorLog -Type INFO -Text "Check For Module MicrosoftTeams"
-if (Get-InstalledModule -Name "MicrosoftTeams") {
-    Write-au2matorLog -Type INFO -Text "Module is installed"
-    
+foreach ($Module in $Modules) {
+    if (Get-Module -ListAvailable -Name $Module) {
+        Write-au2matorLog -Type INFO -Text "Module is already installed:  $Module"        
+    }
+    else {
+        Write-au2matorLog -Type INFO -Text "Module is not installed, try simple method:  $Module"
+        try {
+
+            Install-Module $Module -Force -Confirm:$false
+            Write-au2matorLog -Type INFO -Text "Module was installed the simple way:  $Module"
+
+        }
+        catch {
+            Write-au2matorLog -Type INFO -Text "Module is not installed, try the advanced way:  $Module"
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                Install-PackageProvider -Name NuGet  -MinimumVersion 2.8.5.201 -Force
+                Install-Module $Module -Force -Confirm:$false
+                Write-au2matorLog -Type INFO -Text "Module was installed the advanced way:  $Module"
+
+            }
+            catch {
+                Write-au2matorLog -Type ERROR -Text "could not install module:  $Module"
+            }
+        }
+    }
+    Write-au2matorLog -Type INFO -Text "Import Module:  $Module"
+    Import-module $Module
 }
-else {
-    Write-au2matorLog -Type INFO -Text "Module not found, try to install"
-    Install-Module -Name MicrosoftTeams -Confirm:$false -Force
-}
 
-Write-au2matorLog -Type INFO -Text "Import TEAMS PS Module"
-Import-Module MicrosoftTeams
+[string]$CredentialStorePath = "C:\_SCOworkingDir\TFS\PS-Services\CredentialStore" #see for details: https://au2mator.com/documentation/powershell-credentials/?utm_source=github&utm_medium=social&utm_campaign=M365_SyncTeams&utm_content=PS1
 
-
-
-Write-au2matorLog -Type INFO -Text "Check For Module sqlserver"
-if (Get-InstalledModule -Name "sqlserver") {
-    Write-au2matorLog -Type INFO -Text "Module is installed"
-    
-}
-else {
-    Write-au2matorLog -Type INFO -Text "Module not found, try to install"
-    Install-Module -Name sqlserver -Confirm:$false -Force -AllowClobber
-}
-
-Write-au2matorLog -Type INFO -Text "Import SQL PS Module"
-Import-Module sqlserver
-
+$GraphAPICred_File = "TeamsCreds.xml"
+$GraphAPICred = Import-CliXml -Path (Get-ChildItem -Path $CredentialStorePath -Filter $GraphAPICred_File).FullName
+$clientId = $GraphAPICred.clientId
+$clientSecret = $GraphAPICred.clientSecret
+$tenantName = $GraphAPICred.tenantName
 
 
 
 # Make Sure Database exists
 Write-au2matorLog -Type INFO -Text "Make sure Database exists"
-try{
+try {
     Get-SqlDatabase -Name $StagingDatabase -ServerInstance $StagingServer -ErrorAction Stop 
 }
 catch {
@@ -234,46 +237,75 @@ catch {
 # create variable with SQL to execute
 Write-au2matorLog -Type INFO -Text "Connect to Microsoft Teams"
 
+
+
+
+
 try {
-    $f_secTeamspasswd = ConvertTo-SecureString $TeamsAdminPW -AsPlainText -Force
-    $f_myTeamscreds = New-Object System.Management.Automation.PSCredential ($TeamsAdminUser, $f_secTeamspasswd)
+    Write-au2matorLog -Type INFO -Text "Try to connect to Microsoft Teams"
     
-    Connect-MicrosoftTeams -Credential  $f_myTeamscreds
+    $tokenBody = @{  
+        Grant_Type    = "client_credentials"  
+        Scope         = "https://graph.microsoft.com/.default"  
+        Client_Id     = $clientId  
+        Client_Secret = $clientSecret  
+    }   
+  
+    $tokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$TenantName/oauth2/v2.0/token" -Method POST -Body $tokenBody  
+
+    $headers = @{
+        "Authorization" = "Bearer $($tokenResponse.access_token)"
+        "Content-type"  = "application/json"
+    }
+
+
+try {
+    $URL = "https://graph.microsoft.com/beta/groups?`$filter=resourceProvisioningOptions/Any(x:x eq 'Team')"  
+    $AllTeams = (Invoke-RestMethod -Headers $headers -Uri $URL -Method GET).value 
+
+    Reset-Deleted -TableName "Teams-TeamsList"
+    Reset-Deleted -TableName "Teams-ChannelList"
+    Reset-Deleted -TableName "Teams-MemberList"
+    foreach ($Team in $AllTeams) {
+        Write-au2matorLog -Type INFO -Text "Working with Teams: $($Team.DisplayName))"
+        Sync-Table_TeamsList -Object $Team 
     
-    try {
-        $AllTeams=Get-Team
-        Reset-Deleted -TableName "Teams-TeamsList"
-        Reset-Deleted -TableName "Teams-ChannelList"
-        Reset-Deleted -TableName "Teams-MemberList"
-        foreach ($Team in $AllTeams)
-        {
-            Write-au2matorLog -Type INFO -Text "Working with Teams: $($Team.DisplayName))"
-            Sync-Table_TeamsList -Object $Team 
-        
-        
+    
         # Take care about Channels
-            $AllChannels=Get-TeamChannel -GroupId $Team.GroupID
-            foreach ($Channel in $AllChannels)
-            {
-                Write-au2matorLog -Type INFO -Text "Working with Channel: $($Channel.DisplayName))"
-                Sync-Table_ChannelList -Object $Channel -TeamID $Team.GroupID
-            }
-        
-            $AllMembers=Get-TeamUser -GroupId $Team.GroupId
-            foreach ($Member in $AllMembers)
-            {
-                Write-au2matorLog -Type INFO -Text "Working with User: $($Member.User))"
-                Sync-Table_MemberList -Object $Member -TeamID $Team.GroupID
-            }
-        }
-    }
-    catch {
-        Write-au2matorLog -Type Error -Text "Error on sync: $Error"
-    }
- 
+        $URL = "https://graph.microsoft.com/v1.0/teams/$($Team.id)/channels"  
     
-    Write-au2matorLog -Type INFO -Text "Sync finished"
+        $AllChannels = (Invoke-RestMethod -Headers $headers -Uri $URL -Method GET).value 
+        foreach ($Channel in $AllChannels) {
+            Write-au2matorLog -Type INFO -Text "Working with Channel: $($Channel.DisplayName))"
+            Sync-Table_ChannelList -Object $Channel -TeamID $Team.ID
+        }
+
+        $URL = "https://graph.microsoft.com/v1.0/teams/$($Team.id)/members"  
+        $AllMembers = (Invoke-RestMethod -Headers $headers -Uri $URL -Method GET).value 
+        foreach ($Member in $AllMembers) {
+            Write-au2matorLog -Type INFO -Text "Working with User: $($Member.User))"
+            Sync-Table_MemberList -Object $Member -TeamID $Team.ID
+        }
+
+
+    
+
+}
 }
 catch {
-    Write-au2matorLog -Type Error -Text "unable to connect to Teams Online: $Error"
+    
 }
+
+
+
+
+
+}
+catch {
+    Write-au2matorLog -Type ERROR -Text "Error on connecting to Microsoft Teams, Error: $Error"
+
+}
+
+
+
+
